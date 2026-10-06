@@ -1,0 +1,24 @@
+{
+  "name": "terminal-usdt-i",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Terminal-USDt-i",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "lint": "echo 'Lint belum dikonfigurasi'",
+    "test": "echo 'Test belum dikonfigurasi'"
+  },
+  "dependencies": {
+    "ethers": "latest",
+    "firebase": "^12.19.0",
+    "react": "latest",
+    "react-dom": "latest"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "latest",
+    "vite": "latest"
+  }
+}

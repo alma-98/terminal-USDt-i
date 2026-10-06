@@ -1,0 +1,429 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function currentUser() {
+      return get(
+        /databases/$(database)/documents/users/$(request.auth.uid)
+      ).data;
+    }
+
+    function isSuperAdmin() {
+      return signedIn()
+        && currentUser().role == "super_admin";
+    }
+
+    function isAdmin() {
+      return signedIn()
+        && currentUser().role == "admin";
+    }
+
+    function hasPermission(permission) {
+      return signedIn()
+        && (
+          isSuperAdmin()
+          ||
+          (
+            isAdmin()
+            &&
+            permission in currentUser().permissions
+          )
+        );
+    }
+
+    function sameUser(uid) {
+      return signedIn()
+        && request.auth.uid == uid;
+    }
+
+    /*
+     * USERS
+     *
+     * User creation / role management belongs to
+     * the protected administration flow.
+     */
+
+    match /users/{uid} {
+      allow read: if sameUser(uid) || isSuperAdmin();
+
+      allow create: if isSuperAdmin();
+
+      allow update: if isSuperAdmin()
+        || (
+          sameUser(uid)
+          && request.resource.data.role == resource.data.role
+          && request.resource.data.permissions
+             == resource.data.permissions
+        );
+
+      allow delete: if isSuperAdmin();
+    }
+
+    /*
+     * PERMISSIONS
+     */
+
+    match /permissions/{permissionId} {
+      allow read: if isSuperAdmin()
+        || hasPermission("permission.read");
+
+      allow write: if isSuperAdmin();
+    }
+
+    /*
+     * COINS
+     */
+
+    match /coins/{coinId} {
+      allow read: if signedIn()
+        && hasPermission("coin.read");
+
+      allow create: if hasPermission("coin.create");
+      allow update: if hasPermission("coin.update");
+      allow delete: if hasPermission("coin.delete");
+    }
+
+    /*
+     * TENORS
+     */
+
+    match /tenors/{tenorId} {
+      allow read: if signedIn()
+        && hasPermission("tenor.read");
+
+      allow create: if hasPermission("tenor.create");
+      allow update: if hasPermission("tenor.update");
+      allow delete: if hasPermission("tenor.delete");
+    }
+
+    /*
+     * WALLETS
+     */
+
+    /*
+     * WALLETS
+     *
+     * Wallet hanya menyimpan metadata/public address.
+     *
+     * Seed phrase dan private key TIDAK disimpan
+     * pada collection wallets.
+     */
+
+    match /wallets/{walletId} {
+
+      allow read: if signedIn()
+        && (
+          isSuperAdmin()
+
+          || hasPermission("wallet.read")
+
+          || hasPermission("deployer_wallet.read")
+          || hasPermission("admin_wallet.read")
+          || hasPermission("destination_wallet.read")
+        );
+
+      /*
+       * CREATE
+       *
+       * Super Admin:
+       *   full access
+       *
+       * Admin:
+       *   hanya sesuai permission.
+       */
+
+      allow create: if isSuperAdmin()
+
+        || hasPermission("wallet.create")
+
+        || hasPermission("deployer_wallet.create")
+        || hasPermission("admin_wallet.create")
+        || hasPermission("destination_wallet.create");
+
+      /*
+       * UPDATE
+       */
+
+      allow update: if isSuperAdmin()
+
+        || hasPermission("wallet.update")
+
+        || hasPermission("deployer_wallet.update")
+        || hasPermission("admin_wallet.update")
+        || hasPermission("destination_wallet.update");
+
+      /*
+       * DELETE
+       *
+       * Untuk keamanan, hanya Super Admin
+       * atau permission delete khusus.
+       */
+
+      allow delete: if isSuperAdmin()
+
+        || hasPermission("wallet.delete")
+
+        || hasPermission("deployer_wallet.delete")
+        || hasPermission("admin_wallet.delete")
+        || hasPermission("destination_wallet.delete");
+    }
+
+    /*
+     * ALLOCATIONS
+     *
+     * Allocation represents:
+     * wallet + coin + tenor + expiry.
+     */
+
+    match /allocations/{allocationId} {
+      allow read: if signedIn();
+
+      allow create: if
+        hasPermission("transfer.create")
+        || hasPermission("refill.create");
+
+      allow update: if
+        hasPermission("transfer.create")
+        || hasPermission("refill.create");
+
+      allow delete: if isSuperAdmin();
+    }
+
+    /*
+     * TRANSFERS
+     */
+
+    match /transfers/{transferId} {
+      allow read: if signedIn()
+        && hasPermission("transfer.read");
+
+      allow create: if hasPermission("transfer.create");
+
+      allow update: if hasPermission("transfer.create");
+
+      allow delete: if isSuperAdmin();
+    }
+
+    /*
+     * TRANSACTIONS
+     */
+
+    match /transactions/{transactionId} {
+      allow read: if signedIn();
+
+      allow create: if
+        hasPermission("transfer.create")
+        || hasPermission("swap.create")
+        || hasPermission("burn.create")
+        || hasPermission("refill.create");
+
+      allow update: if isSuperAdmin();
+
+      allow delete: if isSuperAdmin();
+    }
+
+    /*
+     * SWAPS
+     */
+
+    match /swaps/{swapId} {
+      allow read: if signedIn()
+        && hasPermission("swap.read");
+
+      allow create: if hasPermission("swap.create");
+
+      allow update: if hasPermission("swap.create");
+
+      allow delete: if isSuperAdmin();
+    }
+
+    /*
+     * BURN REQUEST
+     */
+
+    match /burnRequests/{requestId} {
+      allow read: if signedIn()
+        && hasPermission("burn.read");
+
+      allow create: if hasPermission("burn.create");
+
+      /*
+       * Burn approval is intentionally NOT permitted
+       * here for Admin.
+       *
+       * Approval must use the protected flow.
+       */
+
+      allow update: if isSuperAdmin();
+      allow delete: if isSuperAdmin();
+    }
+
+    /*
+     * BURN APPROVAL
+     *
+     * Super Admin only.
+     * Re-authentication will additionally be required
+     * in the application/backend flow.
+     */
+
+    match /burnApprovals/{approvalId} {
+      allow read: if isSuperAdmin();
+
+      allow create: if isSuperAdmin()
+        && request.resource.data.reauthenticated == true;
+
+      allow update: if isSuperAdmin();
+
+      allow delete: if isSuperAdmin();
+    }
+
+    /*
+     * PROVIDERS
+     */
+
+    match /providers/{providerId} {
+      allow read: if signedIn()
+        && hasPermission("provider.read");
+
+      allow create: if hasPermission("provider.create");
+      allow update: if hasPermission("provider.update");
+      allow delete: if hasPermission("provider.delete");
+    }
+
+    /*
+     * AUDIT LOGS
+     *
+     * Clients cannot modify audit history.
+     * Creation will later be performed by protected
+     * backend/admin service.
+     */
+
+    match /auditLogs/{logId} {
+      allow read: if signedIn()
+        && hasPermission("audit.read");
+
+      allow create: if isSuperAdmin();
+
+      allow update: if false;
+      allow delete: if false;
+    }
+
+    /*
+     * NOTIFICATIONS
+     */
+
+    match /notifications/{notificationId} {
+      allow read: if signedIn()
+        && resource.data.recipientUid == request.auth.uid;
+
+      allow update: if signedIn()
+        && resource.data.recipientUid == request.auth.uid;
+
+      allow create: if isSuperAdmin();
+
+      allow delete: if isSuperAdmin();
+    }
+
+    /*
+     * SETTINGS
+     */
+
+    match /settings/{settingId} {
+      allow read: if signedIn();
+
+      allow create: if isSuperAdmin();
+      allow update: if isSuperAdmin();
+      allow delete: if isSuperAdmin();
+    }
+
+    /*
+     * DENY UNKNOWN COLLECTIONS
+     */
+
+    /* NETWORK FEES */
+    match /networkFees/{feeId} {
+      allow read: if isSuperAdmin();
+      allow create: if false;
+      allow update: if isSuperAdmin();
+      allow delete: if isSuperAdmin();
+    }
+
+  match /swap_pairs/{swapPairId} {
+    allow read: if signedIn();
+    allow create, update, delete: if isSuperAdmin();
+  }
+
+
+
+  // Stage #24 — Network Management
+  // Network hanya dapat dikelola Super Admin.
+  match /networks/{networkId} {
+    allow read: if signedIn();
+    allow create, update, delete: if isSuperAdmin();
+  }
+
+
+}
+
+
+match /transactionHashes/{hashId} {
+  allow read: if signedIn();
+  allow create: if signedIn();
+  allow update: if signedIn();
+  allow delete: if isSuperAdmin();
+}
+
+match /hashHistory/{historyId} {
+  allow read: if signedIn();
+  allow create: if signedIn();
+  allow update, delete: if isSuperAdmin();
+}
+
+
+match /transactionVerifications/{verificationId} {
+  allow read: if signedIn();
+  allow create, update: if signedIn();
+  allow delete: if isSuperAdmin();
+}
+
+
+match /controllerTx/{controllerTxId} {
+  allow read: if signedIn();
+  allow create: if signedIn();
+  allow update: if signedIn();
+  allow delete: if isSuperAdmin();
+}
+
+match /controllerTxHashes/{hashId} {
+  allow read: if signedIn();
+  allow create: if signedIn();
+  allow update: if signedIn();
+  allow delete: if isSuperAdmin();
+}
+
+match /controllerTxHistory/{historyId} {
+  allow read: if signedIn();
+  allow create: if signedIn();
+  allow update, delete: if isSuperAdmin();
+}
+
+
+
+match /refills/{refillId} {
+  allow read: if signedIn();
+  allow create: if isSuperAdmin();
+  allow update: if isSuperAdmin();
+  allow delete: if isSuperAdmin();
+}
+
+    /* DENY UNKNOWN COLLECTIONS */
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+}

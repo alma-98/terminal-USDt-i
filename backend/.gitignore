@@ -1,0 +1,12 @@
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.seed
+*seed*
+*private*
+*secret*
+keystore/
+secure/
+credentials/
